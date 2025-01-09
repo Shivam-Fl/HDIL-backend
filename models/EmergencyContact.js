@@ -14,7 +14,7 @@ const EmergencyContactSchema = new mongoose.Schema({
   category: {
     type: String,
     required: [true, 'Please add a category'],
-    enum: ['Fire', 'Police', 'Ambulance', 'Electrician', 'Plumber', 'Other']
+    enum:  ['Emergency', 'Service Provider', 'Other']
   }
 });
 

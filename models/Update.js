@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const UpdateSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['news', 'gallery'],
+    enum: ['news','announcement','blogs', 'gallery'],
     required: true
   },
   title: {
@@ -21,8 +21,8 @@ const UpdateSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
   },
+  redirectUrl: String,
   createdAt: {
     type: Date,
     default: Date.now
