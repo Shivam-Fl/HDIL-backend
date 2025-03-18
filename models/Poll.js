@@ -26,6 +26,10 @@ const PollSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  votedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   createdAt: {
     type: Date,
     default: Date.now
@@ -33,4 +37,3 @@ const PollSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Poll', PollSchema);
-

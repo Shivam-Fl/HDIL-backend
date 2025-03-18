@@ -9,14 +9,32 @@ const cloudinary = require('cloudinary').v2;
 // Configure multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// @route   GET api/updates
-// @desc    Get all updates
+// @route   GET api/updates/public
+// @desc    Get all public updates
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const updates = await Update.find().sort({ createdAt: -1 }).populate('createdBy', 'username');
+    const updates = await Update.find({ type: { $nin: ['notices', 'workshop'] } })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'username');
+      
     res.json(updates);
-    console.log(updates);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+// @route   GET api/updates
+// @desc    Get all updates including private ones
+// @access  Private
+router.get('/privateupdates', auth, async (req, res) => {
+  try {
+    const updates = await Update.find({ type: { $in: ['notices', 'workshop'] } })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'username');
+      
+    res.json(updates);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');

@@ -136,18 +136,26 @@ router.post(
     const { email, password } = req.body;
 
     try {
+      // Find the user by email
       let user = await User.findOne({ email }).select('+password');
 
       if (!user) {
         return res.status(400).json({ msg: 'Invalid Credentials' });
       }
 
-      const isMatch = await user.matchPassword(password);
+      // Check if the user is active
+      if (user.status !== 'active') {
+        return res.status(403).json({ msg: 'Account is inactive. Please contact an administrator.' });
+      }
+
+      // Check the password
+      const isMatch = await bcrypt.compare(password, user.password);
 
       if (!isMatch) {
         return res.status(400).json({ msg: 'Invalid Credentials' });
       }
 
+      // Prepare the payload for the JWT
       const payload = {
         user: {
           id: user.id,
@@ -155,6 +163,7 @@ router.post(
         }
       };
 
+      // Sign and return the token
       jwt.sign(
         payload,
         process.env.JWT_SECRET,
@@ -170,6 +179,7 @@ router.post(
     }
   }
 );
+
 
 // @route   GET api/auth/me
 // @desc    Get current logged in user
@@ -224,15 +234,66 @@ router.delete('/users/:id', auth, async (req, res) => {
   }
 });
 
+// @route   PUT api/auth/users/:id/reactivate
+// @desc    Reactivate a user for specified months
+// @access  Private (Admin)
+router.put('/users/:id/reactivate', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ msg: 'Access denied. Admins only.' });
+  }
+
+  const { months } = req.body;
+
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Reactivate the user and extend expiry date
+    user.status = 'active';
+    user.expiryDate = new Date(new Date().setMonth(new Date().getMonth() + months));
+    await user.save();
+
+    res.json({ msg: `User reactivated for ${months} months.` });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+// @route   PUT api/auth/users/:id/toggle-status
+// @desc    Toggle user activation status
+// @access  Private (Admin)
+router.put('/users/:id/toggle-status', auth, async (req, res) => {
+  try {
+    // Check if the logged-in user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ msg: 'Access denied. Admins only.' });
+    }
+
+    // Fetch the user by ID
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Toggle the user's status
+    user.status = user.status === 'active' ? 'inactive' : 'active';
+
+    await user.save();
+
+    res.json({ 
+      msg: `User status changed to ${user.status}.`, 
+      user 
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+//eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdkODA0MDdlZTE4Y2FiODIwNzRiOTYzIiwicm9sZSI6ImFkbWluIn0sImlhdCI6MTc0MjIxMDA1NSwiZXhwIjoxNzQyMjEzNjU1fQ._LA-9h7BQEEeaiYkA-zOVX0cbh4XoEwxZLBDjX8jo0k
 
 module.exports = router;
-
-// "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjc2M2RkNTY3ZjYwYTM0MmM5ZmM5NjJmIiwicm9sZSI6Im1lbWJlciJ9LCJpYXQiOjE3MzQ1OTc5NzQsImV4cCI6MTczNDYwMTU3NH0.8_lMHruy-CT0R3ymvaKhF5A67KM2J86-PKrCA8cDbK4"
-
-
-// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjc2M2RkNTY3ZjYwYTM0MmM5ZmM5NjJmIiwicm9sZSI6Im1lbWJlciJ9LCJpYXQiOjE3MzQ2MjIwMDksImV4cCI6MTczNTIyNjgwOX0.10ARN4mflTmHhxJxos_IuQk8N5W1uqkn0s9SzwBl-_Y
-
-
-
-// // admin 
-//eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjc3OTRkOTIwMGI5NDllZjI5MGIyNGU5Iiwicm9sZSI6ImFkbWluIn0sImlhdCI6MTczNjAwMjk2MiwiZXhwIjoxNzM2MDA2NTYyfQ.kvE_fRjy-fW-LkN8OAbGjBuTMYYLkPlYwK91Jx7hSFA

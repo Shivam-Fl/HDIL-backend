@@ -7,15 +7,34 @@ const auth = require('../middleware/auth');
 // @route   GET api/polls
 // @desc    Get all polls
 // @access  Public
-router.get('/', async (req, res) => {
+router.get('/admin',auth, async (req, res) => {
   try {
     const polls = await Poll.find().sort({ createdAt: -1 }).populate('createdBy', 'username');
-    res.json(polls);
+    res.status(200).json(polls);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 });
+
+router.get('/', auth, async (req, res) => {
+  try {
+    const currentDate = new Date(); // Get the current date and time
+    const polls = await Poll.find({ 
+        expiresAt: { $gte: currentDate }, // Only fetch non-expired polls
+        votedBy: { $ne: req.user.id } // Exclude polls where the user has already voted
+      })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'username');
+
+    res.status(200).json(polls);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+
 
 // @route   POST api/polls
 // @desc    Create a new poll
@@ -63,7 +82,7 @@ router.post(
 // @route   PUT api/polls/:id/vote
 // @desc    Vote on a poll
 // @access  Private
-router.put('/:id/vote', auth, async (req, res) => {
+router.put('/vote/:id', auth, async (req, res) => {
   try {
     const poll = await Poll.findById(req.params.id);
 
@@ -75,13 +94,19 @@ router.put('/:id/vote', auth, async (req, res) => {
       return res.status(400).json({ msg: 'This poll has expired' });
     }
 
-    const { optionIndex } = req.body;
+    if (poll.votedBy.includes(req.user.id)) {
+      return res.status(400).json({ msg: 'You have already voted on this poll' });
+    }
 
-    if (optionIndex < 0 || optionIndex >= poll.options.length) {
+    const { optionId } = req.body;
+
+    if (optionId < 0 || optionId >= poll.options.length) {
       return res.status(400).json({ msg: 'Invalid option' });
     }
 
-    poll.options[optionIndex].votes += 1;
+    poll.options[optionId].votes += 1;
+    poll.votedBy.push(req.user.id);
+
     await poll.save();
 
     res.json(poll);
@@ -93,6 +118,7 @@ router.put('/:id/vote', auth, async (req, res) => {
     res.status(500).send('Server Error');
   }
 });
+
 
 // @route   DELETE api/polls/:id
 // @desc    Delete a poll

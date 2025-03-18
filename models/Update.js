@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const UpdateSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['news','announcement','blogs', 'gallery'],
+    enum: ['news','announcement','blogs', 'gallery', "notices", "workshop"],
     required: true
   },
   title: {

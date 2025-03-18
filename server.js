@@ -58,6 +58,7 @@ app.use('/api/industries', require('./routes/industries'));
 app.use('/api/updates', require('./routes/updates'));
 app.use('/api/emergency', require('./routes/emergency'));
 app.use('/api/polls', require('./routes/polls'));
+app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/workshops', require('./routes/workshops'));
 
 // Error handling middleware

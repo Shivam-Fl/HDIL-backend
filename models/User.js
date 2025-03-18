@@ -7,7 +7,7 @@ const UserSchema = new mongoose.Schema({
     required: [true, 'Please add a username'],
     unique: true,
     trim: true,
-    maxlength: [50, 'Username can not be more than 50 characters']
+    maxlength: [50, 'Username cannot exceed 50 characters']
   },
   email: {
     type: String,
@@ -29,6 +29,15 @@ const UserSchema = new mongoose.Schema({
     enum: ['member', 'admin'],
     default: 'member'
   },
+  status: {
+    type: String,
+    enum: ['active', 'inactive'],
+    default: 'active'
+  },
+  expiryDate: {
+    type: Date,
+    default: () => new Date(new Date().setMonth(new Date().getMonth() + 3)) // 3 months from creation
+  },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   createdAt: {
@@ -37,10 +46,18 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
+// Middleware to set user inactive if expiryDate is reached
+UserSchema.pre('save', function (next) {
+  if (this.expiryDate < new Date()) {
+    this.status = 'inactive';
+  }
+  next();
+});
+
 // Encrypt password using bcrypt
-UserSchema.pre('save', async function(next) {
+UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);
@@ -48,9 +65,8 @@ UserSchema.pre('save', async function(next) {
 });
 
 // Match user entered password to hashed password in database
-UserSchema.methods.matchPassword = async function(enteredPassword) {
+UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 module.exports = mongoose.model('User', UserSchema);
-
