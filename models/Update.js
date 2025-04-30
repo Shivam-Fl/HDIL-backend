@@ -26,6 +26,12 @@ const UpdateSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  location:{
+    type: String
+  },
+  date:{
+    type: Date
   }
 });
 

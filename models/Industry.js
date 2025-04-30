@@ -13,6 +13,34 @@ const IndustrySchema = new mongoose.Schema({
     required: [true, 'Please add a description'],
     maxlength: [500, 'Description can not be more than 500 characters']
   },
+  gstInfo: {
+    type: String,
+    required: [true, 'Please add GST information']
+  },
+  contactNumber: {
+    type: String,
+    required: [true, 'Please add a contact number']
+  },
+  email: {
+    type: String,
+    match: [
+      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      'Please add a valid email'
+    ]
+  },
+  address: {
+    type: String
+  },
+  legalInformation: {
+    type: String
+  },
+  vacancy: {
+    available: {
+      type: Boolean,
+      default: false
+    },
+    description: String
+  },
   products: [{
     name: {
       type: String,
@@ -28,29 +56,14 @@ const IndustrySchema = new mongoose.Schema({
     }]
   }],
   materials: [String],
-  gstInfo: {
-    type: String,
-    required: [true, 'Please add GST information']
-  },
-  contactNumber: {
-    type: String,
-    required: [true, 'Please add a contact number']
-  },
-  vacancy: {
-    available: {
-      type: Boolean,
-      default: false
-    },
-    description: String
-  },
+  images: [{
+    type: String // General images related to the industry
+  }],
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  images: [{
-    type: String // General images related to the industry
-  }],
   createdAt: {
     type: Date,
     default: Date.now

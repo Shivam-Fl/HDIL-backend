@@ -15,15 +15,51 @@ cloudinary.config({
 });
 
 // Configure Multer for file uploads
-const upload = multer({ dest: 'uploads/' });
+const storage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function(req, file, cb) {
+    cb(null, new Date().toISOString().replace(/:/g, '-') + '-' + file.originalname);
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5000000 } // 5MB limit
+});
+
+// File upload fields configuration
+const uploadFields = [
+  { name: 'industryImages', maxCount: 5 },
+  { name: 'productImages[0]', maxCount: 3 },
+  { name: 'productImages[1]', maxCount: 3 },
+  { name: 'productImages[2]', maxCount: 3 },
+  { name: 'productImages[3]', maxCount: 3 },
+  { name: 'productImages[4]', maxCount: 3 },
+  // Support up to 5 products with 3 images each
+];
 
 // @route   GET api/industries
-// @desc    Get all industries
+// @desc    Get all industries with active owners
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const industries = await Industry.find().populate('owner', 'username');
-    res.json(industries);
+    const industries = await Industry.find()
+      .populate('owner', 'username status')
+      .lean();
+    console.log('Industries:', industries);
+
+    // Filter industries to include only those with active owners
+    const activeIndustries = industries.filter(
+      (industry) => industry.owner && industry.owner.status === 'active'
+    );
+
+    if (!activeIndustries.length) {
+      return res.status(201).json({ msg: 'No industries found with active owners'});
+    }
+
+    res.json(activeIndustries);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -31,14 +67,19 @@ router.get('/', async (req, res) => {
 });
 
 // @route   GET api/industries/:id
-// @desc    Get industry by ID
+// @desc    Get industry by ID only if the owner is active
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const industry = await Industry.findById(req.params.id).populate('owner', 'username');
+    const industry = await Industry.findById(req.params.id).populate('owner', 'username status');
 
     if (!industry) {
       return res.status(404).json({ msg: 'Industry not found' });
+    }
+
+    // Check if the owner is active
+    if (industry.owner.status !== 'active') {
+      return res.status(403).json({ msg: 'Owner is not active' });
     }
 
     res.json(industry);
@@ -51,15 +92,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
 // @route   GET api/industries/owner/:ownerId
-// @desc    Get industries by owner ID
+// @desc    Get industries by owner ID only if the owner is active
 // @access  Public
 router.get('/owner/:ownerId', async (req, res) => {
   try {
-    const industries = await Industry.find({ owner: req.params.ownerId }).populate('owner', 'username');
+    const industries = await Industry.find({ owner: req.params.ownerId }).populate('owner', 'username status');
 
     if (!industries.length) {
       return res.status(404).json({ msg: 'No industries found for this owner' });
+    }
+
+    // Ensure the owner is active
+    if (industries[0].owner.status !== 'active') {
+      return res.status(403).json({ msg: 'Owner is not active' });
     }
 
     res.json(industries);
@@ -72,17 +119,36 @@ router.get('/owner/:ownerId', async (req, res) => {
   }
 });
 
+
 // Helper function for uploading images to Cloudinary
 const uploadImagesToCloudinary = async (files) => {
-  const uploadPromises = files.map((file) =>
+  if (!files || files.length === 0) return [];
+  
+  const uploadPromises = files.map(file =>
     cloudinary.uploader.upload(file.path, { folder: 'industries' })
   );
-  const uploadResults = await Promise.all(uploadPromises);
-
-  // Delete local files after uploading
-  files.forEach((file) => fs.unlinkSync(file.path));
-
-  return uploadResults.map((result) => result.secure_url);
+  
+  try {
+    const uploadResults = await Promise.all(uploadPromises);
+    
+    // Delete local files after uploading
+    files.forEach(file => {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    });
+    
+    return uploadResults.map(result => result.secure_url);
+  } catch (error) {
+    console.error('Error uploading to Cloudinary:', error);
+    // Clean up local files even if upload fails
+    files.forEach(file => {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    });
+    throw error;
+  }
 };
 
 // @route   POST api/industries
@@ -92,12 +158,13 @@ router.post(
   '/',
   [
     auth,
-    upload.array('images', 5), // Max 5 images
+    upload.fields(uploadFields),
     [
       check('name', 'Name is required').not().isEmpty(),
       check('description', 'Description is required').not().isEmpty(),
       check('gstInfo', 'GST information is required').not().isEmpty(),
       check('contactNumber', 'Contact number is required').not().isEmpty(),
+      check('email', 'Please include a valid email').isEmail(),
     ],
   ],
   async (req, res) => {
@@ -107,31 +174,62 @@ router.post(
     }
 
     try {
-      const { name, description, products, materials, gstInfo, contactNumber, vacancy } = req.body;
+      const { 
+        name, 
+        description, 
+        gstInfo, 
+        contactNumber, 
+        email, 
+        address, 
+        legalInformation,
+        products, 
+        materials 
+      } = req.body;
 
       // Upload industry images to Cloudinary
-      const images = await uploadImagesToCloudinary(req.files);
+      const industryImages = req.files['industryImages'] ? 
+        await uploadImagesToCloudinary(req.files['industryImages']) : 
+        [];
 
-      // Parse and process products
-      const parsedProducts = typeof products === 'string' ? JSON.parse(products) : products;
+      // Parse products and vacancy data
+      let parsedProducts = typeof products === 'string' ? JSON.parse(products) : products || [];
+      let parsedMaterials = typeof materials === 'string' ? JSON.parse(materials) : materials || [];
+      
+      // Parse vacancy data
+      let vacancy = {
+        available: req.body['vacancy[available]'] === 'true',
+        description: req.body['vacancy[description]'] || ''
+      };
+
+      // Process product images
+      for (let i = 0; i < parsedProducts.length; i++) {
+        const productImageFiles = req.files[`productImages[${i}]`];
+        if (productImageFiles && productImageFiles.length > 0) {
+          const productImages = await uploadImagesToCloudinary(productImageFiles);
+          parsedProducts[i].images = productImages;
+        }
+      }
 
       const newIndustry = new Industry({
         name,
         description,
-        products: parsedProducts,
-        materials: typeof materials === 'string' ? JSON.parse(materials) : materials,
         gstInfo,
         contactNumber,
-        vacancy: typeof vacancy === 'string' ? JSON.parse(vacancy) : vacancy,
-        owner: req.user.id,
-        images,
+        email,
+        address,
+        legalInformation,
+        vacancy,
+        products: parsedProducts,
+        materials: parsedMaterials,
+        images: industryImages,
+        owner: req.user.id
       });
 
       const industry = await newIndustry.save();
 
       res.json(industry);
     } catch (err) {
-      console.error(err.message);
+      console.error('Error creating industry:', err);
       res.status(500).send('Server Error');
     }
   }
@@ -142,7 +240,10 @@ router.post(
 // @access  Private
 router.put(
   '/:id',
-  [auth, upload.array('images', 5)],
+  [
+    auth,
+    upload.fields(uploadFields)
+  ],
   async (req, res) => {
     try {
       let industry = await Industry.findById(req.params.id);
@@ -156,21 +257,61 @@ router.put(
         return res.status(401).json({ msg: 'Not authorized' });
       }
 
-      const { products, ...updates } = req.body;
+      // Prepare updates object
+      const updates = {
+        name: req.body.name,
+        description: req.body.description,
+        gstInfo: req.body.gstInfo,
+        contactNumber: req.body.contactNumber,
+        email: req.body.email,
+        address: req.body.address,
+        legalInformation: req.body.legalInformation,
+        vacancy: {
+          available: req.body['vacancy[available]'] === 'true',
+          description: req.body['vacancy[description]'] || ''
+        }
+      };
 
-      // Upload new images to Cloudinary if provided
-      if (req.files.length > 0) {
-        updates.images = await uploadImagesToCloudinary(req.files);
+      // Parse materials
+      if (req.body.materials) {
+        updates.materials = typeof req.body.materials === 'string' ? 
+          JSON.parse(req.body.materials) : 
+          req.body.materials;
       }
 
-      // Parse and update products
-      updates.products = typeof products === 'string' ? JSON.parse(products) : products;
+      // Upload new industry images if provided
+      if (req.files['industryImages'] && req.files['industryImages'].length > 0) {
+        updates.images = await uploadImagesToCloudinary(req.files['industryImages']);
+      }
 
-      industry = await Industry.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
+      // Parse and process products with their images
+      if (req.body.products) {
+        let parsedProducts = typeof req.body.products === 'string' ? 
+          JSON.parse(req.body.products) : 
+          req.body.products;
+
+        // Process product images
+        for (let i = 0; i < parsedProducts.length; i++) {
+          const productImageFiles = req.files[`productImages[${i}]`];
+          if (productImageFiles && productImageFiles.length > 0) {
+            const productImages = await uploadImagesToCloudinary(productImageFiles);
+            parsedProducts[i].images = productImages;
+          }
+        }
+
+        updates.products = parsedProducts;
+      }
+
+      // Update the industry
+      industry = await Industry.findByIdAndUpdate(
+        req.params.id, 
+        { $set: updates }, 
+        { new: true }
+      );
 
       res.json(industry);
     } catch (err) {
-      console.error(err.message);
+      console.error('Error updating industry:', err);
       if (err.kind === 'ObjectId') {
         return res.status(404).json({ msg: 'Industry not found' });
       }

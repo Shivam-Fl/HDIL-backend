@@ -74,12 +74,12 @@ router.post(
         return res.status(403).json({ msg: 'Unauthorized: Admin access required' });
       }
 
-      const { type, title, content, redirectUrl } = req.body;
+      const { type, title, content, redirectUrl, location, date } = req.body;
       console.log(req.body);
       let imageUrl = null;
       if (req.file) {
         const result = await cloudinary.uploader.upload(req.file.path, {
-          resource_type: 'image',
+          resource_type: 'auto',
           folder: 'updates',
         });
         imageUrl = result.secure_url;
@@ -90,7 +90,9 @@ router.post(
         title,
         content,
         imageUrl,
-        redirectUrl: type === 'blogs' ? redirectUrl : undefined,
+        redirectUrl: (type === 'blogs' || type ==="workshop") ? redirectUrl : undefined,
+        location: type === 'workshop' ? location : undefined,
+        date: type === 'workshop' ? date : undefined,
         createdBy: req.user.id,
       });
 
